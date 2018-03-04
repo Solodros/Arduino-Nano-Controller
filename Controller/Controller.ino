@@ -152,7 +152,7 @@ bool CruiseSafety = false;
 #define CRUISE 8
 #define MINPWM 12
 #define MAXPWM 13
-bool safety[2] = {false,false};
+bool safety[3] = {false,false,false};
 
 RF24 radio(9, 10);
 
@@ -181,7 +181,7 @@ void setup() {
 
 void loop() {
   getThrottlePosition();
-  
+
 
   if (changeSettings == true) {
     controlSettingsMenu();
@@ -196,8 +196,12 @@ void loop() {
     if(safety[0]){
       if (txSettings.triggerMode <= 0){
         if(isTrigger()){
-          
-          if(isNeutral()){ safety[1]=true; }
+          if(isNeutral()){
+            safety[1]=true;
+          }else if(safety[2]==true){
+            safety[1]=safety[2]=false;
+            CruiseValue=txSettings.centerHallValue;
+          }
 
           if(safety[1]==true){
             CruiseValue=hallValue;
@@ -207,9 +211,10 @@ void loop() {
         }else{
           if(safety[1]==true){
             cruise_stepper();
+            safety[2]=true;
             remPackage.throttle = throttle;
             if(hallCenterNoise==throttle){
-              safety[1]=false;
+              safety[1]=safety[2]=false;
             }
 
           }else if(!isNeutral()){
@@ -325,7 +330,7 @@ void controlSettingsMenu() {
           }
           delay(500);
 
-         // LAST EXIT SETTING MENU 
+         // LAST EXIT SETTING MENU
         }else if ( currentSetting == numOfSettings-1) {
           if(1>=getSettingValue(currentSetting)){
               setSettingValue( currentSetting,0);
@@ -460,7 +465,7 @@ setPackage.value = value;
         }
       }
     }
-    
+
     if(remPackage.id==0){
         remPackage.type=1;
         remPackage.id=1;
@@ -978,9 +983,9 @@ void cruise_stepper(){
 void cruise_mode(){
   if (isTrigger()){
     if (!isNeutral()){
-                
+
       if(!CruiseActivated){ CruiseValue=hallValue; }
-                
+
           if(hallValue > (txSettings.centerHallValue) && hallValue < (txSettings.maxHallValue) && hallValue > CruiseValue){
               CruiseValue+=txSettings.stepCruise;
           }else if(hallValue < (txSettings.centerHallValue) && hallValue > (txSettings.minHallValue) && hallValue < CruiseValue){
@@ -993,7 +998,7 @@ void cruise_mode(){
         CruiseActivated=true;
         if(!CruiseSafety){ CruiseValue=hallValue; }
     }
-        
+
         calculateThrottlePosition(CruiseValue);
 
   }else{
