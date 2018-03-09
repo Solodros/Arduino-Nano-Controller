@@ -48,7 +48,7 @@ struct callback {
 };
 struct package {
   uint8_t type;     // | Normal:0  | Setting:1
-  uint8_t throttle; // | Throttle  |
+  short throttle; // | Throttle  |
   uint8_t trigger;  // | Trigger   |
   uint32_t id;
 };
@@ -70,8 +70,8 @@ struct settings {
   short centerHallValue;
   short maxHallValue;
   uint8_t stepCruise;
-  uint8_t minPWM;
-  uint8_t maxPWM;
+  short minPWM;
+  short maxPWM;
   uint64_t address;
   uint8_t rate;
   uint8_t exit;
@@ -97,8 +97,8 @@ const short settingRules[numOfSettings][3] {
   {20, 0, 1023},
   {493, 0, 1023},
   {950, 0, 1023},
-  { 35, 0, 255}, // MIN PWM
-  { 189, 0, 255}, // MAX PWM
+  { 1000, 0, 1000}, // MIN PWM
+  { 2000, 0, 2300}, // MAX PWM
   { -1, 0, 0}, // No validation for pipe address (not really possible this way)
   { -1, 0, 0}, // No validation for default address
   { 50, 1, 50}, // Timing TX rate by millionsecond
@@ -124,10 +124,10 @@ const float maxVoltage = 4.1;
 const float refVoltage = 5.0;
 
 short hallValue;
-uint8_t throttle;
+short throttle;
 uint8_t hallCenterMargin = 4;
 uint8_t hallMenuMargin = 100;
-uint8_t hallCenterNoise = 127;
+short hallCenterNoise = 1500;
 
 const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
 const uint8_t defaultChannel = 108;
@@ -173,7 +173,7 @@ void setup() {
   drawStartScreen();
 
   getThrottlePosition();
-  if (isTrigger()){ if (hallValue < (txSettings.minHallValue + hallMenuMargin)){ changeSettings = true; drawTitleScreen(F("Remote Config")); } }
+  if(isTrigger()){if (hallValue < (txSettings.minHallValue + hallMenuMargin)){changeSettings=true;drawTitleScreen(F("Remote Settings"));}}
   CruiseValue = txSettings.centerHallValue;
 
   initiateTransmitter();
@@ -239,13 +239,18 @@ void loop() {
 
 // When called the throttle and trigger will be used to navigate and change settings
 void controlSettingsMenu() {
-
+short val;
   // If thumbwheel is in top position
   if (hallValue >= (txSettings.centerHallValue + hallMenuMargin) && settingsLoopFlag == false) {
     // Up
     if (changeSelectedSetting == true) {
       if (settingRules[currentSetting][0] != -1) {
-        short val = getSettingValue(currentSetting) + 1;
+
+        if(currentSetting==MINPWM || currentSetting==MAXPWM){
+          val = getSettingValue(currentSetting) + 100;
+        }else{
+          val = getSettingValue(currentSetting) + 1;
+        }
 
         if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
           setSettingValue(currentSetting, val);
@@ -266,7 +271,11 @@ void controlSettingsMenu() {
     if (changeSelectedSetting == true) {
 
       if (settingRules[currentSetting][0] != -1) {
-        short val = getSettingValue(currentSetting) - 1;
+        if(currentSetting==MINPWM || currentSetting==MAXPWM){
+          val = getSettingValue(currentSetting) - 100;
+        }else{
+          val = getSettingValue(currentSetting) - 1;
+        }
 
         if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
           setSettingValue(currentSetting, val);
@@ -442,7 +451,7 @@ remPackage.id=0;
 setPackage.id = 1;
 setPackage.setting = setting;
 setPackage.value = value;
-  while(timer<1000){
+  while(timer<10000){
 
     if(radio.isAckPayloadAvailable()){
       if(remPackage.id==1){
@@ -492,7 +501,7 @@ setPackage.value = value;
 void initiateTransmitter() {
   radio.begin();
   radio.setChannel(defaultChannel);
-  radio.setPALevel(RF24_PA_HIGH);
+  radio.setPALevel(RF24_PA_MAX);
   radio.setAutoAck(true);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
@@ -534,9 +543,9 @@ short calculateHallSensorPosition(){
 // Output analog 0-255
 void calculateThrottlePosition(short _input){
   if ( _input >= txSettings.centerHallValue ){
-    throttle = constrain( map(_input, txSettings.centerHallValue, txSettings.maxHallValue, 127, 255), hallCenterNoise, txSettings.maxPWM );
+    throttle = constrain( map(_input, txSettings.centerHallValue, txSettings.maxHallValue, 1500, 2300), hallCenterNoise, txSettings.maxPWM );
   }else{
-    throttle = constrain( map(_input, txSettings.minHallValue, txSettings.centerHallValue, 0, 127), txSettings.minPWM, hallCenterNoise );
+    throttle = constrain( map(_input, txSettings.minHallValue, txSettings.centerHallValue, 700, 1500), txSettings.minPWM, hallCenterNoise );
   }
   if (abs(throttle - hallCenterNoise) < hallCenterMargin ){ throttle = hallCenterNoise; }
 

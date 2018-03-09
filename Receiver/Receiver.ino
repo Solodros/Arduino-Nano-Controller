@@ -3,6 +3,8 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 #include <VescUart.h>
+#include <Servo.h>
+Servo servoPin;
 
 //#define DEBUG
 #ifdef DEBUG
@@ -15,7 +17,7 @@
 // Transmit and receive package
 struct package {
   uint8_t type;     // | Normal:0  | Setting:1
-  uint8_t throttle; // | Throttle  |
+  short throttle; // | Throttle  |
   uint8_t trigger;  // | Trigger   |
   uint32_t id;
 };
@@ -92,7 +94,7 @@ bool statusBlinkFlag = LOW;
 short iBlink=0;
 const int fancyBlink[][8] = {
     // Connected
-    {100, 50, 50, 50, 50, 100, 100, 50},
+    {25, 25, 25, 25, 25, 25, 25, 25},
     // Timeout / Disconnected
     {500, 500, 500, 500, 500, 500, 500, 500},
 
@@ -104,7 +106,7 @@ const int fancyBlink[][8] = {
 
   };
 
-const uint8_t defaultThrottle = 127;
+const short defaultThrottle = 1500;
 const short timeoutMax = 100;
 
 // Defining RX pins
@@ -140,7 +142,8 @@ void setup()
   pinMode(resetAddressPin, INPUT_PULLUP);
 
   // Set default throttle in startup
-  analogWrite(throttlePin, defaultThrottle);
+  servoPin.attach(throttlePin);
+  servoPin.writeMicroseconds(defaultThrottle);
 
   //setDefaultEEPROMSettings();
   loadEEPROMSettings();
@@ -236,7 +239,7 @@ void acquireSetting() {
   uint64_t value;
   bool flag[4] = {false,false,false,false};
   short timer = 0;
-  
+
   if(remPackage.id==1){
     remPackage.id = 2;
     radio.writeAckPayload(1, &remPackage, sizeof(remPackage));
@@ -281,7 +284,7 @@ void initiateReceiver() {
   if (rxSettings.address == 0) { rxSettings.address = defaultAddress; }
   radio.begin();
   radio.setChannel(defaultChannel);
-  radio.setPALevel(RF24_PA_HIGH);
+  radio.setPALevel(RF24_PA_MAX);
   radio.setAutoAck(true);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
@@ -289,9 +292,9 @@ void initiateReceiver() {
   radio.startListening();
   radio.setRetries(15, 15);
 
-  #ifdef DEBUG
-    radio.printDetails();
-  #endif
+  //#ifdef DEBUG
+    //radio.printDetails();
+  //#endif
 }
 
 // Update a single setting value
@@ -313,20 +316,20 @@ void updateSetting( uint8_t setting, uint64_t value)
   }
 }
 
-void updateThrottle( uint8_t throttle )
+void updateThrottle( short throttle )
 {
   switch ( rxSettings.controlMode )
   {
     // PPM
     case 0:
-      // Write the PWM signal to the ESC (0-255).
-      analogWrite(throttlePin, throttle);
+      // Write the PWM signal to the ESC
+      servoPin.writeMicroseconds(throttle);
       break;
 
     // PPM and UART
     case 1:
-      // Write the PWM signal to the ESC (0-255).
-      analogWrite(throttlePin, throttle);
+      // Write the PWM signal to the ESC
+      servoPin.writeMicroseconds(throttle);
       break;
 
     // UART
