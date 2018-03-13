@@ -9,16 +9,13 @@ Modification from original source at:
   * Options to a Trigger switch
     - Safety ON/OFF
     - Cruise Mode
-  * [Cruise Control]
+  * [Cruise Control] Based on throttle output not PID.
       - Enable Acceleration/Deacceleration cruise control.
       - Introducing *Cruise Stepper* For a smooth linear speed adjustment.
       - Added Setting for *Cruise Stepper* from 1-10. Default is 1. Higher N° is faster stepping. 
       - Added extra safety features for throttling or braking when is on Cruise mode.
-   * [SETTING] Min/Max PWM adjustable analog output between 0-255 for a variety applications.
+   * [SETTING] PWM adjustable analog output between 0/2300 [MIN/MAX] for a variety applications.
    * [SETTING] Rate TX-RX (1ms-50ms). By default is 50ms max.
-      - The lower N°ms will increase the transmitting rate. But it causes delay to the receiver to process.
-      - The higher N°ms will decrease the transmitting rate. Will throw off the throttle responds data.
-      - Conclusion "Depends on the code and the Arduino CHIP" for more SPECS: https://www.arduino.cc/en/Products/Compare
    * [SETTING] Exit Setting screen. No more switching On/Off.
       
 **¤ FIXED**
