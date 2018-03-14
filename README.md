@@ -1,8 +1,12 @@
 Arduino Nano Controlller for VESC and ESC applications
 
+
 **PLEASE UPDATE YOUR LIBRARY BEFORE CONTINUE**
+
 VESC >>> https://github.com/RollingGecko/VescUartControl/tree/VESC6
+
 RF24 >>> http://tmrh20.github.io/RF24/index.html
+
 U8G2 >>> https://github.com/olikraus/u8g2
 
 
