@@ -16,20 +16,19 @@ Modification from original source at:
 
 
 **¤ ADDED**
-  * Options to a Trigger switch
-    - Safety ON/OFF
-    - Cruise Mode
-  * [Cruise Control] Based on throttle output not PID.
-      - Enable Acceleration/Deacceleration cruise control.
-      - Introducing *Cruise Stepper* For a smooth linear speed adjustment.
-      - Added Setting for *Cruise Stepper* from 1-10. Default is 1. Higher N° is faster stepping. 
-      - Added extra safety features for throttling or braking when is on Cruise mode.
-   * [SETTING] PWM adjustable analog output between 0/2300 [MIN/MAX] for a variety applications.
+  * Options control modes
+    - Eco (Smoother throttle and Normal braking)
+    - Normal
+    - Cruise Control PID (*Experimental)
+    - Beginner (Smoother throttle and braking) (*Experimental)
+  * [Cruise Control] Based on PID.
+  * [SETTING for Cruise Controller] Adjustable PID = Kp, Ki, Kd.
+  * [SETTING] **Stepper** add linear throttle to the Cruise controller and Beginner.
    * [SETTING] Rate TX-RX (1ms-50ms). By default is 50ms max.
    * [SETTING] Exit Setting screen. No more switching On/Off.
       
 **¤ FIXED**
-  - Improving a better AckPayLoads between TX and RX with a data variable comparison.
+  - Improving a better AckPayLoads between TX and RX.
   - Changing a few things on the display screen.
   - Sorting out the code. *Arduino Nano capacity mems is **30720** bytes*
   - To Enter a Setting mode now is -> (Hold Trigger Switch + Throttle Down).
