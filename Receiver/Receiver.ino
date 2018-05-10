@@ -14,21 +14,13 @@ Servo servoPin;
 #define DEBUG_PRINT(x)
 #endif
 
-// Transmit and receive package
-struct package {
-  uint8_t type;     // | Normal:0  | Setting:1
-  short throttle; // | Throttle  |
-  uint8_t trigger;  // | Trigger   |
-  uint32_t id;
-};
-
 #define NORMAL 0
 #define SETTING 1
 
 // Defining constants to hold the special settings, so it's easy changed thoughout the code
-#define TRIGGER 0
-#define MODE    7
-#define ADDRESS 14
+#define TRIGGER 1
+#define ADDRESS 15
+#define STEPPER 8
 
 // When receiving a "type: 1" package save the next transmission (a new setting) in this struct
 struct settingPackage {
@@ -38,34 +30,50 @@ struct settingPackage {
 };
 
 // Defining struct to handle callback data (auto ack)
-struct callback {
+struct packageRX { // RX TO TX
   float dutyNow;
   long rpm;
   float inpVoltage;
   float ampHours;
   long tachometerAbs;
-};
 
+  bool cruise;
+  short throttle_set;
+};
+struct packageTX {
+  uint8_t type;     // | Normal:0  | Setting:1
+  short throttle; // | Throttle  |
+  bool trigger;  // | Trigger   |
+  uint8_t id;
+  uint8_t controlMode;
+
+  uint8_t stepper;
+  short Kp;
+  short Ki;
+  short Kd;
+  short rate;
+};
 // Defining struct to handle receiver settings
 struct settings {
-  uint8_t triggerMode; // Trigger mode
-  uint8_t controlMode; // PWM, PWM & UART or UART only
+  uint8_t controlMode; // Trigger mode
   uint64_t address;    // Listen on this address
+  uint8_t stepper;
 };
 
 const uint8_t numOfSettings = 3;
 // Setting rules format: default, min, max.
 const short settingRules[numOfSettings][3] {
-  {0, 1, 2}, // 0: Safety On | 1: Safety Off       | 2: Cruise Control
-  {1, 0, 2}, // 0: PPM only   | 1: PPM and UART | 2: UART only
-  { -1, 0, 0} // No validation for address in this manner
+  {1, 0, 3}, // 0: ECO | 1: NORMAL | 2: CRUISE | 3: BEGINNER
+  { -1, 0, 0}, // No validation for address in this manner
+  { 10, 0, 100} // #8 STEPPER SPEED
 };
 
 struct bldcMeasure uartData;
-struct callback returnData;
-struct package remPackage;
+struct packageRX returnData;
+struct packageTX txPacket;
 struct settingPackage setPackage;
 struct settings rxSettings;
+
 
 // Define default 8 byte address
 const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
@@ -83,6 +91,7 @@ uint8_t statusMode = 0;
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
+bool UartUpdated = false;
 
 // Address reset button
 unsigned long resetButtonTimer;
@@ -96,10 +105,10 @@ const int fancyBlink[][8] = {
     // Connected
     {25, 25, 25, 25, 25, 25, 25, 25},
     // Timeout / Disconnected
-    {500, 500, 500, 500, 500, 500, 500, 500},
+    {100, 500, 100, 500, 500, 500, 500, 500},
 
     // On update or changing setting.
-    {25, 25, 25, 25, 25, 25, 25, 25},
+    {50, 150, 50, 150, 50, 150, 50, 150},
 
     // On reset
     {100, 100, 100, 100, 1000, 100, 5000, 500}
@@ -116,12 +125,21 @@ const uint8_t statusLedPin = 4;
 const uint8_t throttlePin = 5;
 const uint8_t resetAddressPin = 6;
 
+
 // Initiate RF24 class
 RF24 radio(CE, CS);
 
 #define SERIALIO Serial
 
 const int EEPROM_ADDR_FLOW = 0;
+
+// Cruise Control VARS
+long rpm_set;
+long err;
+long err_T;
+long err_P;
+float throttle_adjustment;
+float Kp, Ki, Kd;
 
 void setup()
 {
@@ -135,8 +153,6 @@ void setup()
   SetSerialPort(&SERIALIO);
   SERIALIO.begin(115200);
 #endif
-
-
   pinMode(throttlePin, OUTPUT);
   pinMode(statusLedPin, OUTPUT);
   pinMode(resetAddressPin, INPUT_PULLUP);
@@ -147,6 +163,7 @@ void setup()
 
   //setDefaultEEPROMSettings();
   loadEEPROMSettings();
+
   initiateReceiver();
 }
 
@@ -156,10 +173,12 @@ void loop()
   statusBlink();
 
   while (radio.available()){
-    radio.read( &remPackage, sizeof(remPackage));
-    if ( remPackage.type <= 2 ) {
+    radio.read( &txPacket, sizeof(txPacket));
+    if ( txPacket.type <= 1 ) {
       timeoutTimer = millis();
       recievedData = true;
+      Kp=0.0001*txPacket.Kp; Ki=0.00001*txPacket.Ki; Kd=0.0001*txPacket.Kd;
+
     }else{ radio.read( &setPackage, sizeof(setPackage)); }
     break;
   }
@@ -167,18 +186,47 @@ void loop()
   if (recievedData == true){
     statusMode = CONNECTED;
 
-    if ( remPackage.type == NORMAL ) {
+    if ( txPacket.type == NORMAL ) {
+      getUartData();
+      /*
+      controlMode
+      0 = ECO
+      1 = NORMAL
+      2 = CRUISE
+      3 = BEGINNER 20km limit
+      */
+      if(rxSettings.controlMode==2 && txPacket.trigger){
+        // Check if is changing throttle.
+        if(!((defaultThrottle+5) > txPacket.throttle && (defaultThrottle-5) < txPacket.throttle)){
+          rpm_set = (returnData.rpm);
+          cruise_PID();
+          servoPin.writeMicroseconds(txPacket.throttle);
+        }else{
+          if(returnData.cruise==false){ rpm_set = (returnData.rpm); }
+          cruise_PID();
+          servoPin.writeMicroseconds(returnData.throttle_set);
+        }
+        returnData.cruise=true;
+      }else{
+        if(rxSettings.controlMode==2){
+          rpm_set = (returnData.rpm);
+          cruise_PID();
+          returnData.cruise=false;
+        }
 
-      updateThrottle( remPackage.throttle );
-
-      if ( rxSettings.controlMode != 0 ) {
-        getUartData();
-        radio.writeAckPayload(1, &returnData, sizeof(returnData));
+        servoPin.writeMicroseconds(txPacket.throttle);
       }
 
-    }else if( remPackage.type == SETTING ){
+      // feeding packets back to TX.
+      if(UartUpdated){ radio.writeAckPayload(1, &returnData, sizeof(returnData)); }
+
+    }else if( txPacket.type == SETTING ){
       statusMode = UPDATING;
-      acquireSetting();
+      if(txPacket.id>0){
+        acquireSetting();
+      }else{
+        radio.writeAckPayload(1, &txPacket, sizeof(txPacket));
+      }
     }
     recievedData = false;
   }
@@ -190,7 +238,7 @@ void loop()
   /* Begin timeout handling */
   if ( timeoutMax <= ( millis() - timeoutTimer ) ) {
     // No speed is received within the timeout limit.
-    updateThrottle( defaultThrottle );
+    servoPin.writeMicroseconds( defaultThrottle );
     timeoutTimer = millis();
     statusMode = TIMEOUT;
   }
@@ -237,44 +285,34 @@ void statusBlink() {
 void acquireSetting() {
   uint8_t setting;
   uint64_t value;
-  bool flag[4] = {false,false,false,false};
-  short timer = 0;
+  bool flag[3] = {false,false,false};
 
-  if(remPackage.id==1){
-    remPackage.id = 2;
-    radio.writeAckPayload(1, &remPackage, sizeof(remPackage));
+  if(txPacket.id==1){
+    txPacket.id = 2;
+    radio.writeAckPayload(1, &txPacket, sizeof(txPacket));
     flag[0]=true;
   }
-
-  while(timer<10000){
-    while(radio.available()){
+  unsigned short timer=0;
+  while(timer<6000){
+    if(radio.available()){
       radio.read( &setPackage, sizeof(setPackage));
-      if(setPackage.id == 1){
+      if(setPackage.id==1 || setPackage.id==2){
         setPackage.id=2;
         setting = setPackage.setting;
         value = setPackage.value;
         radio.writeAckPayload(1, &setPackage, sizeof(setPackage));
+        //delay(15);
         flag[2]=true;
-      }else if(setPackage.id == 3 && setPackage.setting==setting && setPackage.value==value){
-        setPackage.id=4;
-        radio.writeAckPayload(1, &setPackage, sizeof(setPackage));
-        flag[3]=true;
-        break;
-      }else{
-
       }
       flag[1]=true;
     }
     timer++;
   }
 
-if(flag[0]==true){DEBUG_PRINT("ERROR TX 01");}
-if(flag[1]==true){DEBUG_PRINT("ERROR TX 02");}
-if(flag[2]==true){DEBUG_PRINT("ERROR TX 03");}
-if(flag[3]==true){DEBUG_PRINT("ERROR TX 04");}
-
-  if(flag[0]==true && flag[1]==true && flag[2]==true && flag[3]==true){
+  if(flag[0]==true && flag[1]==true && flag[2]==true){
     updateSetting(setting, value);
+  }else{
+    initiateReceiver();
   }
   DEBUG_PRINT("END OF SETTING");
 } /*END OF acquireSetting*/
@@ -291,10 +329,6 @@ void initiateReceiver() {
   radio.openReadingPipe(1, rxSettings.address);
   radio.startListening();
   radio.setRetries(15, 15);
-
-  //#ifdef DEBUG
-    //radio.printDetails();
-  //#endif
 }
 
 // Update a single setting value
@@ -303,47 +337,27 @@ void updateSetting( uint8_t setting, uint64_t value)
   // Map remote setting indexes to receiver settings
   switch ( setting ) {
     case TRIGGER: setting = 0; break;  // TriggerMode
-    case MODE: setting = 1; break;  // ControlMode
-    case ADDRESS: setting = 2; break; // Address
+    case ADDRESS: setting = 1; break; // Address
+    case STEPPER: setting = 2; break; // STEPPER
   }
   setSettingValue( setting, value);
   updateEEPROMSettings();
 
   // The address has changed, we need to reinitiate the receiver module
-  if (setting == 2) {
+  if (setting == 1) {
     DEBUG_PRINT("Connection Address Refresh.");
     initiateReceiver();
   }
 }
 
-void updateThrottle( short throttle )
-{
-  switch ( rxSettings.controlMode )
-  {
-    // PPM
-    case 0:
-      // Write the PWM signal to the ESC
-      servoPin.writeMicroseconds(throttle);
-      break;
-
-    // PPM and UART
-    case 1:
-      // Write the PWM signal to the ESC
-      servoPin.writeMicroseconds(throttle);
-      break;
-
-    // UART
-    case 2:
-      // Update throttle with UART
-      break;
-  }
-}
-
 void getUartData()
 {
-  if ( millis() - lastUartPull >= 250 ) {
+  UartUpdated = false;
+  if(txPacket.rate<=1){ txPacket.rate = 250; }
+  if ((millis() - lastUartPull) >= txPacket.rate ) {
 
     lastUartPull = millis();
+    UartUpdated = true;
 
     // Only get what we need
     if ( VescUartGetValue(uartData) )
@@ -351,12 +365,12 @@ void getUartData()
       returnData.dutyNow        = uartData.dutyNow;
       returnData.ampHours       = uartData.ampHours;
       returnData.inpVoltage     = uartData.inpVoltage;
-      returnData.rpm            = uartData.rpm;
-      returnData.tachometerAbs  = uartData.tachometerAbs;
+      returnData.rpm            = (uartData.rpm);
+      returnData.tachometerAbs  = (uartData.tachometerAbs);
     }
     else
     {
-      returnData.dutyNow        = 0;
+      returnData.dutyNow        = 0.0;
       returnData.ampHours       = 0.0;
       returnData.inpVoltage     = 0.0;
       returnData.rpm            = 0;
@@ -400,7 +414,6 @@ void setDefaultEEPROMSettings()
 
 void loadEEPROMSettings()
 {
-  DEBUG_PRINT("** START loadEEPROMSettings **");
   bool rewriteSettings = false;
   // Load settings from EEPROM to custom struct
   EEPROM.get(EEPROM_ADDR_FLOW, rxSettings);
@@ -424,12 +437,10 @@ void loadEEPROMSettings()
   if (rewriteSettings == true) {
     updateEEPROMSettings();
   }
-  DEBUG_PRINT("** END loadEEPROMSettings **");
 }
 
 // Write settings to the EEPROM
 void updateEEPROMSettings() {
-  DEBUG_PRINT("** updateEEPROMSettings **");
   EEPROM.put(EEPROM_ADDR_FLOW, rxSettings);
 }
 
@@ -437,9 +448,8 @@ void updateEEPROMSettings() {
 void setSettingValue(int index, uint64_t value)
 {
   switch (index) {
-    case 0: rxSettings.triggerMode = value; break;
-    case 1: rxSettings.controlMode = value; break;
-    case 2: rxSettings.address = value;     break;
+    case 0: rxSettings.controlMode = value; break;
+    case 1: rxSettings.address = value;     break;
   }
 }
 
@@ -448,8 +458,7 @@ int getSettingValue(uint8_t index)
 {
   int value;
   switch (index) {
-    case 0: value = rxSettings.triggerMode; break;
-    case 1: value = rxSettings.controlMode; break;
+    case 0: value = rxSettings.controlMode; break;
   }
   return value;
 }
@@ -460,8 +469,27 @@ bool inRange(int val, int minimum, int maximum)
 }
 
 void clearEEPROM() {
-  DEBUG_PRINT("Calling clearEEPROM()");
   for (int i = 0 ; i < (EEPROM.length() + EEPROM_ADDR_FLOW) ; i++) {
     EEPROM.write(i, 0);
+  }
+}
+
+void cruise_PID(){
+  if(statusMode==TIMEOUT){
+    returnData.throttle_set=err=err_T=err_P=throttle_adjustment=0;
+  }else if (UartUpdated){
+    err = ((returnData.rpm)-rpm_set);
+    err_T+=err;
+    throttle_adjustment = ((Kp*err) + (Ki*err_T) + (Kd*(err - err_P)));
+    err_P = err;
+  }
+  throttle_adjustment = constrain(1500 - (int)throttle_adjustment, 1000, 2000);
+
+  if((((returnData.throttle_set-txPacket.stepper) < throttle_adjustment) || (throttle_adjustment < (returnData.throttle_set+txPacket.stepper)))){
+    returnData.throttle_set = throttle_adjustment;
+  }else if(throttle_adjustment > returnData.throttle_set){
+    returnData.throttle_set++;
+  }else{
+    returnData.throttle_set--;
   }
 }
