@@ -51,7 +51,7 @@ struct packageTX {
   short Kp;
   short Ki;
   short Kd;
-  short rate;
+  short ratePing;
 };
 // Defining struct to handle receiver settings
 struct settings {
@@ -80,6 +80,7 @@ const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
 const uint8_t defaultChannel = 108;
 uint32_t timeoutTimer = 0;
 bool recievedData = false;
+unsigned long lastPing;
 
 // Current mode of receiver - 0: Connected | 1: Timeout | 2: Updating settings
 uint8_t statusMode = 0;
@@ -178,6 +179,7 @@ void loop()
       timeoutTimer = millis();
       recievedData = true;
       Kp=0.0001*txPacket.Kp; Ki=0.00001*txPacket.Ki; Kd=0.0001*txPacket.Kd;
+      if(txPacket.ratePing<=0){ txPacket.ratePing=250; }
 
     }else{ radio.read( &setPackage, sizeof(setPackage)); }
     break;
@@ -225,7 +227,10 @@ void loop()
       if(txPacket.id>0){
         acquireSetting();
       }else{
-        radio.writeAckPayload(1, &txPacket, sizeof(txPacket));
+        if((millis() - lastPing)>txPacket.ratePing){
+          lastPing=millis();
+          radio.writeAckPayload(1, &txPacket, sizeof(txPacket));
+        }
       }
     }
     recievedData = false;
@@ -353,8 +358,7 @@ void updateSetting( uint8_t setting, uint64_t value)
 void getUartData()
 {
   UartUpdated = false;
-  if(txPacket.rate<=1){ txPacket.rate = 250; }
-  if ((millis() - lastUartPull) >= txPacket.rate ) {
+  if ((millis() - lastUartPull) >= txPacket.ratePing) {
 
     lastUartPull = millis();
     UartUpdated = true;

@@ -66,7 +66,7 @@ struct packageTX {
   short Kp; //0.0001* // 0.0075
   short Ki; //0.00001* // 0.00065
   short Kd; //0.0001* // 0.0015
-  short rate;
+  short ratePing;
 };
 struct settingPackage {
   uint8_t id;
@@ -177,7 +177,7 @@ const short hallCenterNoise = 1500;
 
 const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
 const uint8_t defaultChannel = 108;
-unsigned long lastTransmission;
+unsigned long lastTransmission, lastPing;
 bool connected = false;
 uint8_t failCount;
 
@@ -224,12 +224,16 @@ bool flagTrigger[3] = {false,false,false};
 
 void loop() {
   getThrottlePosition();
-
+  // Ping delay time to RX
+  // Ping refresh time to UART
+  txPacket.ratePing=100;
 
   if (changeSettings == true) {
     txPacket.type=1;
     txPacket.id=0;
-    if((millis() - lastTransmission)>txSettings.rate+500){
+
+    if((millis() - lastPing)>txPacket.ratePing){
+      lastPing=millis();
     if(radio.write(&txPacket, sizeof(txPacket))){
       if(radio.isAckPayloadAvailable()){
         radio.read(&txPacket, sizeof(txPacket));
@@ -476,7 +480,7 @@ short getSettingValue(uint8_t i) {
     case 12:       v = txSettings.minHallValue;   break;
     case 13:      v = txSettings.centerHallValue;break;
     case 14:      v = txSettings.maxHallValue;  break;
-    case (numOfSettings-2): txPacket.rate = v = txSettings.rate;          break;
+    case (numOfSettings-2): v = txSettings.rate;          break;
     case (numOfSettings-1): v = txSettings.exit;break;
   }
   return v;
