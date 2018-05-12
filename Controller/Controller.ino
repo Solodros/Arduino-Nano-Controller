@@ -456,9 +456,9 @@ void calculateRatios() {
   gearRatio = (float)txSettings.motorPulley / (float)txSettings.wheelPulley;
   // ERPM to Km/h
   //ratioRpmSpeed = (gearRatio * 60 * (float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles / 2) * 1000000);
-  ratioRpmSpeed = ((float)txSettings.wheelDiameter * 3.14156) * (0.00003728226 * gearRatio);
+  ratioRpmSpeed = ((float)txSettings.wheelDiameter * 3.14156) / ((float)txSettings.motorPoles / 2) * (0.00003728226 * gearRatio);
   // Pulses to km travelled
-  ratioPulseDistance = (gearRatio*(float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles * 3) * 1000000);
+  ratioPulseDistance = (gearRatio*(float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles / 2) * 1000000);
 }
 
 // Get settings value by index (usefull when iterating through settings).
@@ -816,14 +816,11 @@ void drawPage() {
   suffix = F("K/h");
   decimals = 2;
 
-  // Display Voltage
-  //(txSettings.batteryCells/returnData.inpVoltage)*(minVoltage/100);
-  //tempString = (returnData.inpVoltage) + (String)"v";
+  // Display Voltage in percent
   percentVoltage = (((returnData.inpVoltage/txSettings.batteryCells)-minVoltage)*(100/(maxVoltage-minVoltage)));
   if(percentVoltage>125 ||percentVoltage<0) percentVoltage = 0;
-  tempString = percentVoltage;
-  drawString("B", 5, x + 58, y - 10, u8g2_font_synchronizer_nbp_tr);
-  drawString(tempString, 10, x + 64, y - 5, u8g2_font_helvR10_tr);
+  drawString("%", 5, x + 58, y - 10, u8g2_font_synchronizer_nbp_tr);
+  drawString((String)percentVoltage, 10, x + 64, y - 5, u8g2_font_helvR10_tr);
 
   // Amps HOUR
   tempString = (returnData.ampHours)+(String)"amp";
