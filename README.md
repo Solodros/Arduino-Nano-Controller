@@ -16,17 +16,21 @@ Modification from original source at:
 
 
 **¤ ADDED**
+  * SUPPORT UP TO 3 PROFILE MODE *
+  - One controller for 3 electric skateboard profile settings.
+
+**¤ FEATURES**
   * Options control modes
-    - Eco (Smoother throttle and Normal braking)
-    - Normal
+    - SAFETY with a trigger switch (aka Killswitch). *Throttle must be in the neutral position. This is to prevent accident runaway board if throttle is pushed before trigger switch is apply*. Except Braking.
+    - NORMAL
     - Cruise Control PID (*Experimental)
     - Beginner (Smoother throttle and braking) (*Experimental)
-  * [Cruise Control] Based on PID.
+
   * [SETTING for Cruise Controller] Adjustable PID = Kp, Ki, Kd.
   * [SETTING] **Stepper** add linear throttle to the Cruise controller and Beginner.
    * [SETTING] Rate TX-RX (1ms-50ms). By default is 50ms max.
    * [SETTING] Exit Setting screen. No more switching On/Off.
-      
+
 **¤ FIXED**
   - Improving a better AckPayLoads between TX and RX.
   - Changing a few things on the display screen.

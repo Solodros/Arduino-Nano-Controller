@@ -21,9 +21,9 @@
 U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 const char settingValues[4][4][10] = {
-  {"BETA","PROFILE-A","PROFILE-B"},
+  {"PROFILE-A","PROFILE-B","PROFILE-C"},
 
-  {"S-ON", "S-OFF", "Cruiser", "Beginner"},
+  {"SAFETY", "NORMAL", "Cruiser", "Beginner"},
   {"Li-ion", "LiPo"},
   {"NO", "YES"},
 };
