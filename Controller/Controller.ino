@@ -708,7 +708,7 @@ void initiateTransmitter() {
   }
   radio.begin();
   radio.setChannel(defaultChannel);
-  radio.setPALevel(RF24_PA_MIN);
+  radio.setPALevel(RF24_PA_MAX);
   radio.setAutoAck(true);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
