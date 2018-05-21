@@ -5,20 +5,27 @@
 #include <RF24.h>
 #include <VescUart.h>
 
-#define MODE    0
-#define TRIGGER 1
+#define PROFILE 0
+#define MODE 1
+#define BATTERY_TYPE 2
+#define BATTERY_CELLS 3
+#define MOTOR_POLES 4
+#define MOTOR_PULLEY 5
+#define WHEEL_PULLEY 6
+#define WHEEL_DIAMETER 7
 #define STEPPER 8
 #define ADDRESS 15
 #define RESET 16
+#define RATE 17
 
 U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 const char settingValues[4][4][10] = {
-  {"BETA","","",""},
+  {"BETA","PROFILE-A","PROFILE-B"},
 
-  {"Eco", "Normal", "Cruiser", "Beginner"},
-  {"Li-ion", "LiPo", "", ""},
-  {"NO", "YES", "", ""},
+  {"S-ON", "S-OFF", "Cruiser", "Beginner"},
+  {"Li-ion", "LiPo"},
+  {"NO", "YES"},
 };
 
 const unsigned char logo[] = {
@@ -100,8 +107,8 @@ struct settings {
   uint8_t A_motorPulley;
   uint8_t A_wheelPulley;
   uint8_t A_wheelDiameter;
+  uint8_t A_stepper;
   uint64_t A_address;
-  uint8_t A_rate;
 
   uint8_t B_controlMode;
   uint8_t B_batteryType;
@@ -110,46 +117,34 @@ struct settings {
   uint8_t B_motorPulley;
   uint8_t B_wheelPulley;
   uint8_t B_wheelDiameter;
+  uint8_t B_stepper;
   uint64_t B_address;
-  uint8_t B_rate;
-
-  uint8_t C_controlMode;
-  uint8_t C_batteryType;
-  uint8_t C_batteryCells;
-  uint8_t C_motorPoles;
-  uint8_t C_motorPulley;
-  uint8_t C_wheelPulley;
-  uint8_t C_wheelDiameter;
-  uint64_t C_address;
-  uint8_t C_rate;
 };
 
 uint8_t currentSetting = 0;
 const uint8_t numOfSettings = 19;
+
 const short settingRules[numOfSettings][3] {
-  {0, 0, 0}, // PROFILE
+  {0, 0, 3}, // PROFILE
   {1, 0, 3}, // 0:ECO 1:NORMAL 2:CRUISE 3:BEGINNER
   {0, 0, 1}, // 0 Li-ion & 1 LiPo
-  {10, 0, 12},
-  {14, 0, 250},
-  {14, 0, 250},
-  {66, 0, 250},
+  {10, 1, 14},
+  {14, 1, 250},
+  {14, 1, 250},
+  {66, 1, 250},
   {100, 0, 250},
   { 10, 1, 100}, // 8 STEPPER SPEED
   { 75, 0, 1000}, // 9 STEPPER Kp  0.0001*
   { 65, 0, 1000}, // 10 STEPPER Ki 0.00001*
   { 15, 0, 1000}, // 11 STEPPER Kd 0.0001*
-  {50, 0, 1023}, // 12
-  {523, 0, 1023}, // 13
-  {950, 0, 1023}, // 14
+  {0, 0, 1023}, // 12
+  {500, 0, 1023}, // 13
+  {100, 0, 1023}, // 14
   { -1, 0, 0}, // 17 No validation for pipe address (not really possible this way)
   { -1, 0, 0}, // 18 No validation for default address
   { 50, 1, 100}, // 19 Timing TX rate by millionsecond
   { 0, 0, 1} // 20 EXIT
 };
-
-
-
 
 struct packageRX returnData;
 struct packageTX txPacket;
@@ -250,7 +245,7 @@ void loop() {
 
     // CRUISE CONTROL MODE x2 Trigger
     if(txSettings.controlMode==2){
-      bool nThrottle = inRange(hallValue, (txSettings.centerHallValue - txSettings.stepper), (txSettings.centerHallValue + txSettings.stepper));
+      bool nThrottle = inRange(hallValue, (txSettings.centerHallValue-getTxValue(STEPPER)), (txSettings.centerHallValue+getTxValue(STEPPER)));
       if(txPacket.trigger){
         timeTrigger=millis();
         flagTrigger[0]=flagTrigger[1]=true;
@@ -277,20 +272,32 @@ void loop() {
         txPacket.throttle = throttle;
     }else{
           // controlMode
-          // 0 = ECO
-          // 1 = NORMAL
+          // 0 = S-ON
+          // 1 = S-OFF
           // 2 = CRUISE
           // 3 = BEGINNER 15km limit
 
-          // 0 = ECO
+          // 0 = SAFETY ON
           if(txSettings.controlMode==0){
+            if(throttle>hallCenterNoise && !txPacket.trigger){
+              safety[1]=false;
+            }else if(throttle<=hallCenterNoise && txPacket.trigger){
+              safety[1]=true;
+            }
+
+            if(txPacket.trigger && safety[1]){
+              txPacket.throttle = throttle;
+            }else{
+              setNeutral();
+            }
+            /*
             if(throttle>hallCenterNoise){
               if(throttle_set<hallCenterNoise){ throttle_set=hallCenterNoise; }
-              if((throttle_set+txSettings.stepper)>throttle && throttle_set<throttle){
+              if((throttle_set+getTxValue(STEPPER))>throttle && throttle_set<throttle){
                 throttle=throttle_set++;
               }else{
                 if(throttle>throttle_set && throttle_set<throttle){
-                  throttle=throttle_set+=txSettings.stepper;
+                  throttle=throttle_set+=getTxValue(STEPPER);
                 }else{
                   throttle_set=throttle;
                 }
@@ -299,6 +306,7 @@ void loop() {
               throttle_set=throttle;
             }
             txPacket.throttle = throttle_set;
+            //*/
 
           // 3 = BEGINNER 15km limit
           }else if(txSettings.controlMode==3){
@@ -308,22 +316,22 @@ void loop() {
 
             if(throttle>hallCenterNoise){
               if(throttle_set<hallCenterNoise){ throttle_set=hallCenterNoise; }
-              if((throttle_set+txSettings.stepper)>throttle && throttle_set<throttle){
+              if((throttle_set+getTxValue(STEPPER))>throttle && throttle_set<throttle){
                 throttle=throttle_set++;
               }else{
                 if(throttle>throttle_set && throttle_set<throttle){
-                  throttle=throttle_set+=txSettings.stepper;
+                  throttle=throttle_set+=getTxValue(STEPPER);
                 }else{
                   throttle_set=throttle;
                 }
               }
-              if(speedKM>speedLimit){ throttle=throttle_set-=txSettings.stepper; }
+              if(speedKM>speedLimit){ throttle=throttle_set-=getTxValue(STEPPER); }
             }else if(throttle<hallCenterNoise){
               if(throttle>throttle_set){ throttle_set=throttle; }
               if(throttle<1200){
                 throttle=throttle_set-=25;
               }else if(throttle<throttle_set){
-                throttle=throttle_set-=txSettings.stepper;
+                throttle=throttle_set-=getTxValue(STEPPER);
               }
             }else{
               if(throttle<throttle_set){ throttle_set=throttle; }
@@ -331,7 +339,7 @@ void loop() {
             }
             txPacket.throttle = throttle_set;
           }else{
-            // NORMAL MODE
+            // S-OFF MODE
             txPacket.throttle = throttle;
           }
 
@@ -347,15 +355,15 @@ void loop() {
 
 // When called the throttle and trigger will be used to navigate and change settings
 void controlSettingsMenu() {
-short val;
+  short v;
   // If thumbwheel is in top position
   if (hallValue >= (txSettings.centerHallValue + hallMenuMargin) && settingsLoopFlag == false) {
     // Up
     if (changeSelectedSetting == true) {
       if (settingRules[currentSetting][0] != -1) {
-          val = getSettingValue(currentSetting) + 1;
-        if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
-          setSettingValue(currentSetting, val);
+          v = getTxValue(currentSetting) + 1;
+        if (inRange(v, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+          setTxValue(currentSetting, v);
           settingsLoopFlag = true;
         }
       }
@@ -373,9 +381,9 @@ short val;
     if (changeSelectedSetting == true) {
 
       if (settingRules[currentSetting][0] != -1) {
-          val = getSettingValue(currentSetting) - 1;
-        if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
-          setSettingValue(currentSetting, val);
+          v = getTxValue(currentSetting) - 1;
+        if (inRange(v, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+          setTxValue(currentSetting, v);
           settingsLoopFlag = true;
         }
       }
@@ -401,9 +409,9 @@ short val;
       if (changeSelectedSetting == true) {
 
         // Settings that need's to be transmitted to the recevier
-        if ( currentSetting == TRIGGER || currentSetting == STEPPER) {
+        if ( currentSetting == MODE || currentSetting == STEPPER) {
 
-          if (!transmitSetting( currentSetting, getSettingValue(currentSetting) )) {
+          if (!transmitSetting( currentSetting, getTxValue(currentSetting))) {
             // Error! Load the old setting
             loadEEPROMSettings();
           }
@@ -415,7 +423,7 @@ short val;
           uint64_t address = generateAddress();
 
           if (transmitSetting( currentSetting, address )) {
-            setSettingValue(currentSetting, address);
+            setTxValue(currentSetting, address);
             initiateTransmitter();
 
           }
@@ -425,19 +433,18 @@ short val;
         else if ( currentSetting == RESET ) {
 
           if (transmitSetting( ADDRESS, defaultAddress )) {
-            setSettingValue( ADDRESS, defaultAddress );
+            setTxValue( ADDRESS, defaultAddress );
             initiateTransmitter();
           }
 
          // LAST EXIT SETTING MENU
         }else if ( currentSetting == numOfSettings-1) {
-          if(getSettingValue(currentSetting)>0){
-              setSettingValue( currentSetting,0);
+          if(getTxValue(currentSetting)>0){
+              setTxValue( currentSetting,0);
               initiateTransmitter();
               changeSettings = false;
           }
         }
-
         updateEEPROMSettings();
       }
 
@@ -453,59 +460,162 @@ short val;
 // Update values used to calculate speed and distance travelled.
 void calculateRatios() {
   // Gearing ratio
-  gearRatio = (float)txSettings.motorPulley / (float)txSettings.wheelPulley;
+  gearRatio = (float)getTxValue(MOTOR_PULLEY) / (float)getTxValue(WHEEL_PULLEY);
   // ERPM to Km/h
   //ratioRpmSpeed = (gearRatio * 60 * (float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles / 2) * 1000000);
-  ratioRpmSpeed = ((float)txSettings.wheelDiameter * 3.14156) / ((float)txSettings.motorPoles / 2) * (0.00003728226 * gearRatio);
+  ratioRpmSpeed = ((float)getTxValue(WHEEL_DIAMETER) * 3.14156) / ((float)getTxValue(MOTOR_POLES) / 2) * (0.00003728226 * gearRatio);
   // Pulses to km travelled
-  ratioPulseDistance = (gearRatio*(float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles / 2) * 1000000);
+  ratioPulseDistance = (gearRatio*(float)getTxValue(WHEEL_DIAMETER) * 3.14156) / (((float)getTxValue(MOTOR_POLES) / 2) * 1000000);
 }
 
 // Get settings value by index (usefull when iterating through settings).
-short getSettingValue(uint8_t i) {
+short getTxValue(uint8_t i) {
   short v;
+
   switch (i) {
-    case MODE:    v = txSettings.profileMode;    break;
-    case TRIGGER: v = txSettings.controlMode;    break;
-    case 2:       v = txSettings.batteryType;    break;
-    case 3:       v = txSettings.batteryCells;   break;
-    case 4:       v = txSettings.motorPoles;     break;
-    case 5:       v = txSettings.motorPulley;    break;
-    case 6:       v = txSettings.wheelPulley;    break;
-    case 7:       v = txSettings.wheelDiameter;  break;
-    case STEPPER: txPacket.stepper = v = txSettings.stepper;     break;
-    case 9:   txPacket.Kp = v = txSettings.Kp;     break;
-    case 10:  txPacket.Ki = v = txSettings.Ki;     break;
-    case 11:  txPacket.Kd = v = txSettings.Kd;     break;
+    case PROFILE:    v = txSettings.profileMode;    break;
+    case MODE:
+        switch (txSettings.profileMode){
+          case 1:    v = txSettings.A_controlMode;    break;
+          case 2:    v = txSettings.B_controlMode;    break;
+          default: v = txSettings.controlMode;
+        }
+    break;
+    case BATTERY_TYPE:
+          switch (txSettings.profileMode){
+            case 1:    v = txSettings.A_batteryType;    break;
+            case 2:    v = txSettings.B_batteryType;    break;
+            default: v = txSettings.batteryType;
+          }
+    break;
+    case BATTERY_CELLS:
+            switch (txSettings.profileMode){
+              case 1:    v = txSettings.A_batteryCells;    break;
+              case 2:    v = txSettings.B_batteryCells;    break;
+              default: v = txSettings.batteryCells;
+            }
+    break;
+    case MOTOR_POLES:
+            switch (txSettings.profileMode){
+              case 1:    v = txSettings.A_motorPoles;    break;
+              case 2:    v = txSettings.B_motorPoles;    break;
+              default: v = txSettings.motorPoles;
+            }
+   break;
+   case MOTOR_PULLEY:
+              switch (txSettings.profileMode){
+                case 1:    v = txSettings.A_motorPulley;    break;
+                case 2:    v = txSettings.B_motorPulley;    break;
+                default: v = txSettings.motorPulley;
+              }
+   break;
+   case WHEEL_PULLEY:
+                switch (txSettings.profileMode){
+                  case 1:    v = txSettings.A_wheelPulley;    break;
+                  case 2:    v = txSettings.B_wheelPulley;    break;
+                  default: v = txSettings.wheelPulley;
+                }
+    break;
+    case WHEEL_DIAMETER:
+                  switch (txSettings.profileMode){
+                    case 1:    v = txSettings.A_wheelDiameter;    break;
+                    case 2:    v = txSettings.B_wheelDiameter;    break;
+                    default: v = txSettings.wheelDiameter;
+                  }
+    break;
+    case STEPPER:
+                  switch (txSettings.profileMode){
+                    case 1:    v = txSettings.A_stepper;    break;
+                    case 2:    v = txSettings.B_stepper;    break;
+                    default: v = txSettings.stepper;
+                  }
+    break;
+    case 9:   txPacket.Kp = v = txSettings.Kp;    break;
+    case 10:  txPacket.Ki = v = txSettings.Ki;    break;
+    case 11:  txPacket.Kd = v = txSettings.Kd;    break;
     case 12:       v = txSettings.minHallValue;   break;
-    case 13:      v = txSettings.centerHallValue;break;
-    case 14:      v = txSettings.maxHallValue;  break;
-    case (numOfSettings-2): v = txSettings.rate;          break;
-    case (numOfSettings-1): v = txSettings.exit;break;
+    case 13:      v = txSettings.centerHallValue; break;
+    case 14:      v = txSettings.maxHallValue;   break;
+    case (numOfSettings-2): v = txSettings.rate; break;
+    case (numOfSettings-1): v = txSettings.exit; break;
   }
   return v;
 }
 
 // Set a value of a specific setting by index.
-void setSettingValue(uint8_t i, uint64_t v) {
+void setTxValue(uint8_t i, uint64_t v) {
   switch (i) {
-    case MODE:    txSettings.profileMode = v;     break;
-    case TRIGGER: txSettings.controlMode = v;     break;
-    case 2:       txSettings.batteryType = v;     break;
-    case 3:       txSettings.batteryCells = v;    break;
-    case 4:       txSettings.motorPoles = v;      break;
-    case 5:       txSettings.motorPulley = v;     break;
-    case 6:       txSettings.wheelPulley = v;     break;
-    case 7:       txSettings.wheelDiameter = v;   break;
-    case STEPPER:  txSettings.stepper = v;      break;
+    case PROFILE:    txSettings.profileMode = v;     break;
+    case MODE:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_controlMode = v;    break;
+        case 2:    txSettings.B_controlMode = v;    break;
+        default: txSettings.controlMode = v;
+      }
+    break;
+    case BATTERY_TYPE:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_batteryType = v;    break;
+        case 2:    txSettings.B_batteryType = v;    break;
+        default: txSettings.batteryType = v;
+      }
+    break;
+    case BATTERY_CELLS:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_batteryCells = v;    break;
+        case 2:    txSettings.B_batteryCells = v;    break;
+        default: txSettings.batteryCells = v;
+      }
+    break;
+    case MOTOR_POLES:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_motorPoles = v;    break;
+        case 2:    txSettings.B_motorPoles = v;    break;
+        default: txSettings.motorPoles = v;
+      }
+    break;
+    case MOTOR_PULLEY:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_motorPulley = v;    break;
+        case 2:    txSettings.B_motorPulley = v;    break;
+        default: txSettings.motorPulley = v;
+      }
+    break;
+    case WHEEL_PULLEY:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_wheelPulley = v;    break;
+        case 2:    txSettings.B_wheelPulley = v;    break;
+        default: txSettings.wheelPulley = v;
+      }
+    break;
+    case WHEEL_DIAMETER:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_wheelDiameter = v;    break;
+        case 2:    txSettings.B_wheelDiameter = v;    break;
+        default: txSettings.wheelDiameter = v;
+      }
+    break;
+    case STEPPER:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_stepper = v;    break;
+        case 2:    txSettings.B_stepper = v;    break;
+        default: txSettings.stepper = v;
+      }
+    break;
     case 9:       txSettings.Kp = v;      break;
     case 10:      txSettings.Ki = v;      break;
     case 11:      txSettings.Kd = v;      break;
     case 12:      txSettings.minHallValue = v;    break;
     case 13:      txSettings.centerHallValue = v; break;
     case 14:      txSettings.maxHallValue = v;    break;
-    case ADDRESS: txSettings.address = v;         break;
-    case (numOfSettings-2): txSettings.rate = v;            break;
+    case ADDRESS:
+      switch (txSettings.profileMode){
+        case 1:    txSettings.A_address = v;    break;
+        case 2:    txSettings.B_address = v;    break;
+        default: txSettings.address = v;
+      }
+    break;
+    case (numOfSettings-2): txSettings.rate = v;  break;
     case (numOfSettings-1): txSettings.exit = v;  break;
   }
 }
@@ -513,7 +623,7 @@ void setSettingValue(uint8_t i, uint64_t v) {
 // Function used to transmit the throttle value, and receive the VESC realtime.
 void transmitToReceiver() {
 
-  if ((millis() - lastTransmission) >= txSettings.rate ) {
+  if ((millis() - lastTransmission) >=getTxValue(RATE)) {
 
     lastTransmission = millis();
 
@@ -539,70 +649,75 @@ void transmitToReceiver() {
 
 bool transmitSetting(uint8_t setting, uint64_t value){
 
-bool flag[3]={false,false,false};
-unsigned short timer=0;
-txPacket.id=0;
-while(timer<1000){
-    if(radio.isAckPayloadAvailable()){
-      if(txPacket.id==1){
-        radio.read( &txPacket, sizeof(txPacket));
-        if(txPacket.id==2){
-          setPackage.id = 1;
-          setPackage.setting = setting;
-          setPackage.value = value;
-          if(radio.write(&setPackage, sizeof(setPackage))){
-            delay(15);
-            flag[1]=true;
+  bool flag[3]={false,false,false};
+  unsigned short timer=0;
+  txPacket.id=0;
+  while(timer<1000){
+      if(radio.isAckPayloadAvailable()){
+        if(txPacket.id==1){
+          radio.read( &txPacket, sizeof(txPacket));
+          if(txPacket.id==2){
+            setPackage.id = 1;
+            setPackage.setting = setting;
+            setPackage.value = value;
+            if(radio.write(&setPackage, sizeof(setPackage))){
+              delay(15);
+              flag[1]=true;
+            }
           }
-        }
-      }else{
-        radio.read( &setPackage, sizeof(setPackage));
-        if(setPackage.id==2){
-          flag[2]=true;
-          break;
+        }else{
+          radio.read( &setPackage, sizeof(setPackage));
+          if(setPackage.id==2){
+            flag[2]=true;
+            break;
+          }
+
         }
 
       }
 
-    }
+      if(txPacket.id==0){
+          txPacket.type=1;
+          txPacket.id=1;
+          if(radio.write(&txPacket, sizeof(txPacket))){
+            delay(15);
+            flag[0]=true;
+          }
 
-    if(txPacket.id==0){
-        txPacket.type=1;
-        txPacket.id=1;
-        if(radio.write(&txPacket, sizeof(txPacket))){
-          delay(15);
-          flag[0]=true;
-        }
-
-    }
-  timer++;
-}
-  if(flag[0]==true && flag[1]==true && flag[2]==true){
-    drawPrint("RX Accepted");
-    delay(3000);
-    return true;
-  }else{
-    drawPrint("No responding.");
-    delay(1500);
+      }
+    timer++;
   }
-  return false;
+    if(flag[0]==true && flag[1]==true && flag[2]==true){
+      drawPrint("RX Accepted");
+      delay(3000);
+      return true;
+    }else{
+      drawPrint("No responding.");
+      delay(1500);
+    }
+    return false;
 }
 
 
 void initiateTransmitter() {
+  uint64_t rx_address;
+  switch(txSettings.profileMode){
+    case 1:    rx_address = txSettings.A_address;    break;
+    case 2:    rx_address = txSettings.B_address;    break;
+    default:   rx_address =  txSettings.address;
+  }
   radio.begin();
   radio.setChannel(defaultChannel);
   radio.setPALevel(RF24_PA_MIN);
   radio.setAutoAck(true);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
-  radio.openWritingPipe(txSettings.address);
+  radio.openWritingPipe(rx_address);
   radio.setRetries(15, 15);
 }
 
 
-void updateMainDisplay()
-{
+void updateMainDisplay(){
   u8g2.firstPage();
 
   do {
@@ -654,8 +769,8 @@ uint8_t batteryLevel() {
     return (voltage - minVoltage) * 100 / (maxVoltage - minVoltage);
   }
 }
-float batteryVoltage()
-{
+
+float batteryVoltage(){
   float batteryVoltage = 0.0;
   unsigned short total = 0;
 
@@ -673,8 +788,8 @@ String getSettingTitle(uint8_t index) {
   String title;
 
   switch (index) {
-    case MODE: title = "Control Profile";     break;
-    case TRIGGER: title = "Control Mode";    break;
+    case PROFILE: title = "Control Profile";     break;
+    case MODE: title = "Control Mode";    break;
     case 2: title = "Battery type";   break;
     case 3: title = "Battery cells";  break;
     case 4: title = "Motor poles";    break;
@@ -698,12 +813,6 @@ String getSettingTitle(uint8_t index) {
 }
 
 void drawSettingsMenu() {
-  /*String settingValues[4][4] = {
-    {"BETA", "Profile A", "Profile B","Profile C"},
-    {"Eco", "Normal", "Cruiser","Beginner"},
-    {"Li-ion", "LiPo", "",""},
-    {"NO", "YES", "",""}
-  };*/
   String settingUnits[3] = {"S", "T", "mm"};
   String settingValue, settingUnit;
 
@@ -726,13 +835,17 @@ void drawSettingsMenu() {
 
   switch (currentSetting) {
     case ADDRESS:
-      value = txSettings.address;
+      switch (txSettings.profileMode){
+        case 1:    value = txSettings.A_address;    break;
+        case 2:    value = txSettings.B_address;    break;
+        default: value = txSettings.address;
+      }
       break;
     case RESET:
       value = defaultAddress;
       break;
     default:
-      value = getSettingValue(currentSetting);
+      value = getTxValue(currentSetting);
       break;
   }
 
@@ -817,8 +930,8 @@ void drawPage() {
   decimals = 2;
 
   // Display Voltage in percent
-  percentVoltage = (((returnData.inpVoltage/txSettings.batteryCells)-minVoltage)*(100/(maxVoltage-minVoltage)));
-  if(percentVoltage>125 ||percentVoltage<0) percentVoltage = 0;
+  percentVoltage = (((returnData.inpVoltage/getTxValue(BATTERY_CELLS))-minVoltage)*(100/(maxVoltage-minVoltage)));
+  if(percentVoltage>125 || percentVoltage<0) percentVoltage = 0;
   drawString("%", 5, x + 58, y - 10, u8g2_font_synchronizer_nbp_tr);
   drawString((String)percentVoltage, 10, x + 64, y - 5, u8g2_font_helvR10_tr);
 
@@ -859,17 +972,13 @@ void drawPage() {
 
   // Display MODE
   switch (txSettings.controlMode) {
-    case 0: tempString = "ECO"; break;
+    case 0: tempString = "SAFETY"+(String)((safety[1]) ? " ON" : " OFF"); break;
     case 1: tempString = "NORMAL"; break;
-    case 2: tempString = "CRUISE"; break;
+    case 2:
+      tempString = "CRUISE"+(String)((returnData.cruise) ? " ON" : " OFF");
+
+    break;
     case 3: tempString = "BEGINNER"; break;
-  }
-  if (txSettings.controlMode == 2) {
-    if(returnData.cruise){
-      tempString = tempString + " ON";
-    }else{
-      tempString = tempString + " OFF";
-    }
   }
   drawString(tempString, 12, x + 2, y + 15, u8g2_font_profont10_tf );
 }
@@ -958,8 +1067,7 @@ void drawBatteryLevel() {
 }
 
 
-uint64_t generateAddress()
-{
+uint64_t generateAddress(){
   randomSeed( millis() );
 
   char x[10];
@@ -981,8 +1089,7 @@ uint64_t generateAddress()
   return (uint64_t) StringToUint64(x);
 }
 
-String uint64ToString(uint64_t number)
-{
+String uint64ToString(uint64_t number){
   unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
   unsigned long part2 = (unsigned long)((number));
 
@@ -992,8 +1099,7 @@ String uint64ToString(uint64_t number)
   return String(part1, DEC) + String(part2, DEC);
 }
 
-String uint64ToAddress(uint64_t number)
-{
+String uint64ToAddress(uint64_t number){
   unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
   unsigned long part2 = (unsigned long)((number));
 
@@ -1030,10 +1136,10 @@ void setDefaultEEPROMSettings() {
 
   for ( uint8_t i = 0; i < numOfSettings; i++ )
   {
-    setSettingValue( i, settingRules[i][0] );
+    setTxValue( i, settingRules[i][0] );
   }
 
-  txSettings.address = defaultAddress;
+  txSettings.address=txSettings.A_address=txSettings.B_address=defaultAddress;
   updateEEPROMSettings();
 }
 void loadEEPROMSettings() {
@@ -1048,12 +1154,10 @@ void loadEEPROMSettings() {
     // If setting default value is -1, don't check if its valid
     if ( settingRules[i][0] != -1 ) {
 
-      short val = getSettingValue(i);
-
-      if (! inRange(val, settingRules[i][1], settingRules[i][2])) {
+      if (! inRange(getTxValue(i), settingRules[i][1], settingRules[i][2])) {
         // Setting is damaged or never written. Rewrite default.
         changeSettings = rewriteSettings = true;
-        setSettingValue(i, settingRules[i][0] );
+        setTxValue(i, settingRules[i][0] );
       }
     }
   }

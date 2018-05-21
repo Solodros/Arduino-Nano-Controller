@@ -63,7 +63,7 @@ struct settings {
 const uint8_t numOfSettings = 3;
 // Setting rules format: default, min, max.
 const short settingRules[numOfSettings][3] {
-  {1, 0, 3}, // 0: ECO | 1: NORMAL | 2: CRUISE | 3: BEGINNER
+  {1, 0, 3}, // 0: S-ON | 1: S-OFF | 2: CRUISE | 3: BEGINNER
   { -1, 0, 0}, // No validation for address in this manner
   { 10, 0, 100} // #8 STEPPER SPEED
 };
@@ -192,8 +192,8 @@ void loop()
       getUartData();
       /*
       controlMode
-      0 = ECO
-      1 = NORMAL
+      0 = S-ON
+      1 = S-OFF
       2 = CRUISE
       3 = BEGINNER 20km limit
       */
