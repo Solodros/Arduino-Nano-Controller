@@ -139,7 +139,7 @@ const short settingRules[numOfSettings][3] {
   { 15, 0, 1000}, // 11 STEPPER Kd 0.0001*
   {0, 0, 1023}, // 12
   {500, 0, 1023}, // 13
-  {100, 0, 1023}, // 14
+  {1000, 0, 1023}, // 14
   { -1, 0, 0}, // 17 No validation for pipe address (not really possible this way)
   { -1, 0, 0}, // 18 No validation for default address
   { 50, 1, 100}, // 19 Timing TX rate by millionsecond
@@ -308,15 +308,17 @@ void loop() {
             txPacket.throttle = throttle_set;
             //*/
 
-          // 3 = BEGINNER 15km limit
+          // 3 = BEGINNER 20km limit
           }else if(txSettings.controlMode==3){
 
-            unsigned short speedLimit = 10;
+            unsigned short speedLimit = 20;
             speedKM = ratioRpmSpeed * returnData.rpm;
 
             if(throttle>hallCenterNoise){
               if(throttle_set<hallCenterNoise){ throttle_set=hallCenterNoise; }
-              if((throttle_set+getTxValue(STEPPER))>throttle && throttle_set<throttle){
+
+              if(speedKM>speedLimit){ throttle=throttle_set-=getTxValue(STEPPER);
+              }else if((throttle_set+getTxValue(STEPPER))>throttle && throttle_set<throttle){
                 throttle=throttle_set++;
               }else{
                 if(throttle>throttle_set && throttle_set<throttle){
@@ -325,7 +327,7 @@ void loop() {
                   throttle_set=throttle;
                 }
               }
-              if(speedKM>speedLimit){ throttle=throttle_set-=getTxValue(STEPPER); }
+
             }else if(throttle<hallCenterNoise){
               if(throttle>throttle_set){ throttle_set=throttle; }
               if(throttle<1200){
