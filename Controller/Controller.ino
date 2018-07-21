@@ -28,7 +28,7 @@ const char settingValues[4][4][10] = {
   {"NO", "YES"},
 };
 
-const unsigned char logo[] = {
+const unsigned char logo[] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x80, 0x3c, 0x01,
   0xe0, 0x00, 0x07, 0x70, 0x18, 0x0e, 0x30, 0x18, 0x0c, 0x98, 0x99, 0x19,
   0x80, 0xff, 0x01, 0x04, 0xc3, 0x20, 0x0c, 0x99, 0x30, 0xec, 0xa5, 0x37,
@@ -37,17 +37,17 @@ const unsigned char logo[] = {
   0x80, 0x3c, 0x01, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const unsigned char transmittingIcon[] = {
+const unsigned char transmittingIcon[] PROGMEM = {
   0x18, 0x00, 0x0c, 0x00, 0xc6, 0x00, 0x66, 0x00, 0x23, 0x06, 0x33, 0x0f,
   0x33, 0x0f, 0x23, 0x06, 0x66, 0x00, 0xc6, 0x00, 0x0c, 0x00, 0x18, 0x00
 };
 
-const unsigned char connectedIcon[] = {
+const unsigned char connectedIcon[] PROGMEM = {
   0x18, 0x00, 0x0c, 0x00, 0xc6, 0x00, 0x66, 0x00, 0x23, 0x06, 0x33, 0x09,
   0x33, 0x09, 0x23, 0x06, 0x66, 0x00, 0xc6, 0x00, 0x0c, 0x00, 0x18, 0x00
 };
 
-const unsigned char noconnectionIcon[] = {
+const unsigned char noconnectionIcon[] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x09,
   0x00, 0x09, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
@@ -160,7 +160,7 @@ const uint8_t triggerPin = 4;
 const uint8_t batteryMeasurePin = A2;
 const uint8_t hallSensorPin = A3;
 
- float percentVoltage = 0;
+float percentVoltage = 0;
 const float minVoltage = 3.0;
 const float maxVoltage = 4.2;
 const float refVoltage = 5.0;
@@ -203,10 +203,8 @@ void setup() {
 
   getThrottlePosition();
   if(isTrigger()){
-    if (hallValue < (txSettings.minHallValue + hallMenuMargin)){
-      changeSettings=true;
-      drawTitleScreen(F("Remote Settings"));
-    }
+    drawTitleScreen(F("Remote Settings"));
+    changeSettings=true;
   }
   //changeSettings=true;
 
@@ -464,8 +462,9 @@ void calculateRatios() {
   // Gearing ratio
   gearRatio = (float)getTxValue(MOTOR_PULLEY) / (float)getTxValue(WHEEL_PULLEY);
   // ERPM to Km/h
-  //ratioRpmSpeed = (gearRatio * 60 * (float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles / 2) * 1000000);
-  ratioRpmSpeed = ((float)getTxValue(WHEEL_DIAMETER) * 3.14156) / ((float)getTxValue(MOTOR_POLES) / 2) * (0.00003728226 * gearRatio);
+  //ratioRpmSpeed = ((float)getTxValue(WHEEL_DIAMETER) * 3.14156) / ((float)getTxValue(MOTOR_POLES) / 2) * (0.00003728226 * gearRatio);
+  ratioRpmSpeed = ((gearRatio * 60 * (float)getTxValue(WHEEL_DIAMETER) * 3.14156)) / ((float)getTxValue(MOTOR_POLES) / 2) * (1000000);
+
   // Pulses to km travelled
   ratioPulseDistance = (gearRatio*(float)getTxValue(WHEEL_DIAMETER) * 3.14156) / (((float)getTxValue(MOTOR_POLES) / 2) * 1000000);
 }
@@ -885,7 +884,7 @@ void drawStartScreen() {
 
   do {
 
-    u8g2.drawXBM( 4, 4, 24, 24, logo);
+    u8g2.drawXBMP( 4, 4, 24, 24, logo);
 
     tempString = F("DIY Controller");
     drawString(tempString, 15, 33, 21, u8g2_font_helvR10_tr );
@@ -1031,9 +1030,9 @@ void drawSignal() {
 
   if (connected == true) {
     if (isTrigger()) {
-      u8g2.drawXBM(x, y, 12, 12, transmittingIcon);
+      u8g2.drawXBMP(x, y, 12, 12, transmittingIcon);
     } else {
-      u8g2.drawXBM(x, y, 12, 12, connectedIcon);
+      u8g2.drawXBMP(x, y, 12, 12, connectedIcon);
     }
   } else {
     if (millis() - lastSignalBlink > 100) {
@@ -1042,9 +1041,9 @@ void drawSignal() {
     }
 
     if (signalBlink == true) {
-      u8g2.drawXBM(x, y, 12, 12, connectedIcon);
+      u8g2.drawXBMP(x, y, 12, 12, connectedIcon);
     } else {
-      u8g2.drawXBM(x, y, 12, 12, noconnectionIcon);
+      u8g2.drawXBMP(x, y, 12, 12, noconnectionIcon);
     }
   }
 }
