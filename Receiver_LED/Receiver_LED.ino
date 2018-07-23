@@ -116,8 +116,8 @@ const int fancyBlink[][8] = {
 
   };
 
-short safetyThrottle = 1500;
-bool safetyActive = false;
+short safeStopThrottle = 1500;
+bool safeStop = false;
 const short defaultThrottle = 1500;
 const short timeoutMax = 100;
 
@@ -125,9 +125,6 @@ const short timeoutMax = 100;
 const uint8_t CE = 9;
 const uint8_t CS = 10;
 const uint8_t statusLedPin = 3;
-const uint8_t GreenLedPin = 6;
-const uint8_t AmberLedPin = 7;
-const uint8_t RedLedPin = 8;
 const uint8_t throttlePin = 5;
 const uint8_t resetAddressPin = 2;
 
@@ -154,13 +151,17 @@ const uint8_t BatteryCells = 12;
 const float minVoltage = 3.2;
 const float maxVoltage = 4.2;
 unsigned long BatteryLastBlinkLed;
-const int BatteryBlink[4][8]={
+const int BatteryBlink[5][8]={
 {250,500,250,500,250,500,150,1000}, // x4
 {250,500,250,500,250,1000,150,1000}, // x3
 {250,1000,250,150,150,150,150,150}, // x2
-{1000,1000,1000,1000,1000,1000,1000,1000} // x2
+{1000,1000,1000,1000,1000,1000,1000,1000}, // xEMPTY
+{0,1000,0,1000,0,1000,0,1000} // FULL
 };
 bool BatteryLED[3]={LOW,LOW,LOW};
+const uint8_t GreenLedPin = 6;
+const uint8_t AmberLedPin = 7;
+const uint8_t RedLedPin = 8;
 
 void setup()
 {
@@ -180,9 +181,6 @@ void setup()
   pinMode(GreenLedPin, OUTPUT);
   pinMode(AmberLedPin, OUTPUT);
   pinMode(RedLedPin, OUTPUT);
-  digitalWrite(GreenLedPin, HIGH);
-  digitalWrite(AmberLedPin, HIGH);
-  digitalWrite(RedLedPin, HIGH);
 
   // Set default throttle in startup
   servoPin.attach(throttlePin);
@@ -199,12 +197,13 @@ void loop()
 
   statusBlink();
   statusBattery();
+  getUartData();
 
   while (radio.available()){
     radio.read( &txPacket, sizeof(txPacket));
     if ( txPacket.type <= 1 ) {
       timeoutTimer = millis();
-      recievedData = safetyActive = true;
+      recievedData = true;
       Kp=0.0001*txPacket.Kp; Ki=0.00001*txPacket.Ki; Kd=0.0001*txPacket.Kd;
       if(txPacket.ratePing<=0){ txPacket.ratePing=250; }
 
@@ -214,9 +213,9 @@ void loop()
 
   if (recievedData == true){
     statusMode = CONNECTED;
+    safeStop=false;
 
     if ( txPacket.type == NORMAL ) {
-      getUartData();
       /*
       controlMode
       0 = S-ON
@@ -271,20 +270,17 @@ void loop()
   if ( timeoutMax <= ( millis() - timeoutTimer ) ) {
     // No speed is received within the timeout limit.
     timeoutTimer = millis();
+    if(statusMode == CONNECTED) safeStop = true;
     statusMode = TIMEOUT;
   }
 
-  if(statusMode==TIMEOUT){
-    if(safetyActive==true){
-      safetyThrottle-5;
-      if(safetyThrottle<1000){ safetyThrottle=1000; }
-      servoPin.writeMicroseconds(safetyThrottle);
+    if(safeStop==true){
+      safeStopThrottle-=10;
+      if(safeStopThrottle<1000){ safeStopThrottle=1000; }
+      servoPin.writeMicroseconds(safeStopThrottle);
     }else{
-      servoPin.writeMicroseconds(defaultThrottle);
+      safeStopThrottle=defaultThrottle;
     }
-  }else{
-    safetyThrottle=defaultThrottle;
-  }
   /* End timeout handling */
 }
 
@@ -329,16 +325,16 @@ void statusBattery(){
   uint8_t i_status = 0;
   uint8_t i_led = 0;
   BatteryPercent = (((returnData.inpVoltage/BatteryCells-minVoltage)*(100/(maxVoltage-minVoltage))));
-
-  if(BatteryPercent>=90){        i_status=0; i_led=0; // GREEN x4
-  }else if(BatteryPercent>=80){  i_status=1; i_led=0;// GREEN x3
-  }else if(BatteryPercent>=70){  i_status=2; i_led=0;// GREEN x2
-  }else if(BatteryPercent>=60){  i_status=0; i_led=1;// AMBER x4
-  }else if(BatteryPercent>=50){  i_status=1; i_led=1;// AMBER x3
-  }else if(BatteryPercent>=40){  i_status=2; i_led=1; // AMBER x2
-  }else if(BatteryPercent>=30){  i_status=0; i_led=2;// RED x4
-  }else if(BatteryPercent>=20){  i_status=1; i_led=2;// RED x3
-  }else if(BatteryPercent>=10){  i_status=2; i_led=2;// RED x2
+  if(BatteryPercent>=90){        i_status=4; i_led=0; // FULL CHARGED
+  }else if(BatteryPercent>=80){  i_status=0; i_led=0;// GREEN x4
+  }else if(BatteryPercent>=70){  i_status=1; i_led=0;// GREEN x3
+  }else if(BatteryPercent>=60){  i_status=2; i_led=0;// GREEN x2
+  }else if(BatteryPercent>=50){  i_status=0; i_led=1;// AMBER x4
+  }else if(BatteryPercent>=40){  i_status=1; i_led=1; // AMBER x3
+  }else if(BatteryPercent>=30){  i_status=2; i_led=1;// AMBER x2
+  }else if(BatteryPercent>=20){  i_status=0; i_led=2;// RED x4
+  }else if(BatteryPercent>=10){  i_status=1; i_led=2;// RED x3
+  }else if(BatteryPercent>=5){  i_status=2; i_led=2;// RED x2
   }else{ i_status=3; i_led=2; }
 
  if(BatteryPercent>=70){ BatteryLED[1] = BatteryLED[2] = HIGH;

@@ -115,8 +115,8 @@ const int fancyBlink[][8] = {
     {100, 100, 100, 100, 1000, 100, 5000, 500}
 
   };
-short safetyThrottle = 1500;
-bool safetyActive = false;
+short safeStopThrottle = 1500;
+bool safeStop = false;
 const short defaultThrottle = 1500;
 const short timeoutMax = 100;
 
@@ -178,7 +178,7 @@ void loop()
     radio.read( &txPacket, sizeof(txPacket));
     if ( txPacket.type <= 1 ) {
       timeoutTimer = millis();
-      recievedData = safetyActive = true;
+      recievedData = true;
       Kp=0.0001*txPacket.Kp; Ki=0.00001*txPacket.Ki; Kd=0.0001*txPacket.Kd;
       if(txPacket.ratePing<=0){ txPacket.ratePing=250; }
 
@@ -188,6 +188,7 @@ void loop()
 
   if (recievedData == true){
     statusMode = CONNECTED;
+    safeStop = false;
 
     if ( txPacket.type == NORMAL ) {
       getUartData();
@@ -244,19 +245,16 @@ void loop()
   /* Begin timeout handling */
   if ( timeoutMax <= ( millis() - timeoutTimer ) ) {
     timeoutTimer = millis();
+    if(statusMode == CONNECTED) safeStop = true;
     statusMode = TIMEOUT;
   }
 
-  if(statusMode==TIMEOUT){
-    if(safetyActive==true){
-      safetyThrottle-5;
-      if(safetyThrottle<1000){ safetyThrottle=1000; }
-      servoPin.writeMicroseconds(safetyThrottle);
-    }else{
-      servoPin.writeMicroseconds(defaultThrottle);
-    }
+  if(safeStop==true){
+    safeStopThrottle-=10;
+    if(safeStopThrottle<1000){ safeStopThrottle=1000; }
+    servoPin.writeMicroseconds(safeStopThrottle);
   }else{
-    safetyThrottle=defaultThrottle;
+    safeStopThrottle=defaultThrottle;
   }
   /* End timeout handling */
 }
