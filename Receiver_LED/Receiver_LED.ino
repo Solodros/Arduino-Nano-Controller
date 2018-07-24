@@ -78,17 +78,16 @@ struct settings rxSettings;
 // Define default 8 byte address
 const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
 const uint8_t defaultChannel = 108;
-uint32_t timeoutTimer = 0;
+unsigned long timeoutTimer;
 bool recievedData = false;
 unsigned long lastPing;
 
-// Current mode of receiver - 0: Connected | 1: Timeout | 2: Updating settings
 uint8_t statusMode = 0;
 
-#define CONNECTED 0
-#define TIMEOUT 1
-#define UPDATING 2
-#define RESETTING 3
+#define CONNECTED 1
+#define TIMEOUT 2
+#define UPDATING 3
+#define RESETTING 4
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
@@ -118,6 +117,7 @@ const int fancyBlink[][8] = {
 
 short safeStopThrottle = 1500;
 bool safeStop = false;
+unsigned long safeStopTimer;
 const short defaultThrottle = 1500;
 const short timeoutMax = 100;
 
@@ -150,11 +150,11 @@ short countBlink=0;
 const uint8_t BatteryCells = 12;
 const float minVoltage = 3.2;
 const float maxVoltage = 4.2;
-unsigned long BatteryLastBlinkLed;
+unsigned long BatteryLastBlinkLed = 0;
 const int BatteryBlink[5][8]={
-{250,500,250,500,250,500,150,1000}, // x4
-{250,500,250,500,250,1000,150,1000}, // x3
-{250,1000,250,150,150,150,150,150}, // x2
+{250,500,250,500,250,500,150,5000}, // x4
+{250,500,250,500,250,1000,150,5000}, // x3
+{150,150,150,150,150,150,150,150}, // x2
 {1000,1000,1000,1000,1000,1000,1000,1000}, // xEMPTY
 {0,1000,0,1000,0,1000,0,1000} // FULL
 };
@@ -270,16 +270,21 @@ void loop()
   if ( timeoutMax <= ( millis() - timeoutTimer ) ) {
     // No speed is received within the timeout limit.
     timeoutTimer = millis();
-    if(statusMode == CONNECTED) safeStop = true;
+    if(statusMode == CONNECTED){ safeStop = true; }
     statusMode = TIMEOUT;
   }
 
     if(safeStop==true){
       safeStopThrottle-=10;
       if(safeStopThrottle<1000){ safeStopThrottle=1000; }
+      if(safeStopTimer<=0){
+        safeStopTimer = millis();
+      }else if((millis() - safeStopTimer) >= 30000){
+        safeStopTimer=0;
+        safeStop=false;
+        safeStopThrottle=defaultThrottle;
+      }
       servoPin.writeMicroseconds(safeStopThrottle);
-    }else{
-      safeStopThrottle=defaultThrottle;
     }
   /* End timeout handling */
 }
@@ -337,17 +342,19 @@ void statusBattery(){
   }else if(BatteryPercent>=5){  i_status=2; i_led=2;// RED x2
   }else{ i_status=3; i_led=2; }
 
- if(BatteryPercent>=70){ BatteryLED[1] = BatteryLED[2] = HIGH;
- }else if(BatteryPercent>=40){ BatteryLED[0]=LOW; BatteryLED[2]=HIGH;
- }else if(BatteryPercent>=10){  BatteryLED[0] = BatteryLED[1] = LOW;
+ if(BatteryPercent>=60){ BatteryLED[1] = BatteryLED[2] = HIGH;
+ }else if(BatteryPercent>=30){ BatteryLED[0]=LOW; BatteryLED[2]=HIGH;
+ }else if(BatteryPercent>=5){  BatteryLED[0] = BatteryLED[1] = LOW;
  }else{ BatteryLED[0] = BatteryLED[1] = LOW; }
 
  if ((millis() - BatteryLastBlinkLed) > BatteryBlink[i_status][countBlink]){
-     if(BatteryLED[i_led] == LOW){
-       BatteryLED[i_led] = HIGH;
-     }else{
-       BatteryLED[i_led] = LOW;
-     }
+    if(BatteryBlink[i_status][countBlink]>0){
+       if(BatteryLED[i_led] == LOW){
+         BatteryLED[i_led] = HIGH;
+       }else{
+         BatteryLED[i_led] = LOW;
+       }
+    }
      BatteryLastBlinkLed = millis();
      countBlink++;
  }

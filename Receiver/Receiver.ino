@@ -78,17 +78,17 @@ struct settings rxSettings;
 // Define default 8 byte address
 const uint64_t defaultAddress = 0xE8E8F0F1E9LL;
 const uint8_t defaultChannel = 108;
-uint32_t timeoutTimer = 0;
+unsigned long timeoutTimer;
 bool recievedData = false;
 unsigned long lastPing;
 
 // Current mode of receiver - 0: Connected | 1: Timeout | 2: Updating settings
 uint8_t statusMode = 0;
 
-#define CONNECTED 0
-#define TIMEOUT 1
-#define UPDATING 2
-#define RESETTING 3
+#define CONNECTED 1
+#define TIMEOUT 2
+#define UPDATING 3
+#define RESETTING 4
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
@@ -117,6 +117,7 @@ const int fancyBlink[][8] = {
   };
 short safeStopThrottle = 1500;
 bool safeStop = false;
+unsigned long safeStopTimer;
 const short defaultThrottle = 1500;
 const short timeoutMax = 100;
 
@@ -245,16 +246,21 @@ void loop()
   /* Begin timeout handling */
   if ( timeoutMax <= ( millis() - timeoutTimer ) ) {
     timeoutTimer = millis();
-    if(statusMode == CONNECTED) safeStop = true;
+    if(statusMode == CONNECTED){ safeStop = true; }
     statusMode = TIMEOUT;
   }
 
   if(safeStop==true){
     safeStopThrottle-=10;
     if(safeStopThrottle<1000){ safeStopThrottle=1000; }
+    if(safeStopTimer<=0){
+      safeStopTimer = millis();
+    }else if((millis() - safeStopTimer) >= 30000){
+      safeStopTimer=0;
+      safeStop=false;
+      safeStopThrottle=defaultThrottle;
+    }
     servoPin.writeMicroseconds(safeStopThrottle);
-  }else{
-    safeStopThrottle=defaultThrottle;
   }
   /* End timeout handling */
 }
